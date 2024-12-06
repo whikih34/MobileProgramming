@@ -183,10 +183,14 @@ class _BudgetManagementScreenState extends State<BudgetManagementScreen> {
           .get();
 
       if (userSnapshot.exists) {
+        // friends 필드가 없으면 빈 배열로 초기화
         List<dynamic> friends = userSnapshot['friends'] ?? [];
+
         setState(() {
           friendsList = friends.map((friend) => friend.toString()).toList();
         });
+      } else {
+        print('User document not found');
       }
     } catch (e) {
       print('Error fetching friends: $e');

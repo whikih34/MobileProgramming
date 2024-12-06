@@ -23,6 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool isNearBudgetAlertEnabled = false;
   bool isOverBudgetAlertEnabled = false;
   double nearBudgetThreshold = 80; // 기본적으로 80% 설정
+  List<String> friends = []; // 친구 목록을 저장하는 배열
 
 
   @override
@@ -65,20 +66,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final docSnapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .get();
+    try {
+      final docRef = FirebaseFirestore.instance.collection('users').doc(userId);
+      final docSnapshot = await docRef.get();
 
-    if (docSnapshot.exists) {
-      final settings = docSnapshot.data();
-      setState(() {
-        isNearBudgetAlertEnabled = settings?['near_budget_alert'] ?? false;
-        isOverBudgetAlertEnabled = settings?['over_budget_alert'] ?? true;
-        nearBudgetThreshold = settings?['near_budget_threshold']?.toDouble() ?? 80.0;
-      });
+      if (docSnapshot.exists) {
+        final settings = docSnapshot.data();
+        setState(() {
+          isNearBudgetAlertEnabled = settings?['near_budget_alert'] ?? false;
+          isOverBudgetAlertEnabled = settings?['over_budget_alert'] ?? true;
+          nearBudgetThreshold = (settings?['near_budget_threshold'] ?? 80).toDouble();
+
+          // friends 필드가 배열인지 확인
+          if (settings?['friends'] is List) {
+            friends = List<String>.from(settings?['friends']);
+          } else {
+            friends = []; // friends 필드가 배열이 아니면 빈 배열로 초기화
+          }
+        });
+
+        // friends 필드가 없거나 빈 배열인 경우 초기값 추가
+        if (friends.isEmpty) {
+          final initialFriend = '$userId#내 정보';
+          friends = [initialFriend];
+          await docRef.set({
+            'friends': friends,
+          }, SetOptions(merge: true));
+        }
+      } else {
+        // 문서가 없는 경우 기본값으로 새 문서 생성
+        await docRef.set({
+          'near_budget_alert': false,
+          'over_budget_alert': true,
+          'near_budget_threshold': 80.0,
+          'friends': ["1@1"], // friends 배열에 "1@1" 추가
+        });
+        setState(() {
+          isNearBudgetAlertEnabled = false;
+          isOverBudgetAlertEnabled = true;
+          nearBudgetThreshold = 80.0;
+          friends = ["1@1"];
+        });
+      }
+    } catch (e) {
+      print('Failed to load settings: $e');
     }
   }
+
+
 
   Future<void> _saveSettings() async {
     await FirebaseFirestore.instance
