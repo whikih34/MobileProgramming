@@ -19,6 +19,7 @@ class _BudgetManagementScreenState extends State<BudgetManagementScreen> {
   int totalBudget = 0; // 총 예산 변수
   DateTime _selectedMonth = DateTime.now(); // 현재 선택된 월
   TextEditingController _budgetController = TextEditingController();
+  double nearBudgetThreshold = 80.0; // 예산 근접 알림 임계값 (기본값 80%)
 
   @override
   void initState() {
@@ -155,6 +156,10 @@ class _BudgetManagementScreenState extends State<BudgetManagementScreen> {
         final prefs = await SharedPreferences.getInstance();
         prefs.setBool('lastBudgetExceeded', false);
       }
+
+      // 예산 근접 알림 체크
+      await _checkNearBudgetAlert();  // 예산 근접 알림 확인
+
     } catch (e) {
       print('Error fetching total expense: $e');
     }
@@ -178,10 +183,32 @@ class _BudgetManagementScreenState extends State<BudgetManagementScreen> {
     _fetchTotalExpense();
   }
 
+  Future<bool> _getOverBudgetAlertSetting() async {
+    try {
+      final docSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .get();
+
+      if (docSnapshot.exists) {
+        final settings = docSnapshot.data();
+        return settings?['over_budget_alert'] ?? true; // 기본값은 true로 설정
+      } else {
+        return true; // 문서가 없으면 기본값을 true로 설정
+      }
+    } catch (e) {
+      print("Error fetching over budget alert setting: $e");
+      return true; // 예외가 발생하면 기본값을 true로 설정
+    }
+  }
+
   Future<void> _showBudgetExceededNotification() async {
     // 알림 활성화 상태 확인
     final prefs = await SharedPreferences.getInstance();
     final isNotificationEnabled = prefs.getBool('notificationsEnabled') ?? true;
+    final overBudgetAlertEnabled = await _getOverBudgetAlertSetting();
+
+    if (!overBudgetAlertEnabled) return; // over_budget_alert이 false이면 알림을 울리지 않음
 
     if (!isNotificationEnabled) return; // 알림이 비활성화된 경우 종료
 
@@ -201,6 +228,90 @@ class _BudgetManagementScreenState extends State<BudgetManagementScreen> {
       1, // 고정된 ID로 알림 생성
       '예산 초과 알림',
       '총 지출이 설정한 예산을 초과했습니다!',
+      notificationDetails,
+    );
+  }
+
+  //예산 근접기준 끌어오기
+  Future<void> _fetchNearBudgetThreshold() async {
+    try {
+      final docSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .get();
+
+      if (docSnapshot.exists) {
+        final settings = docSnapshot.data();
+
+        if (settings?['near_budget_threshold'] is double) {
+          nearBudgetThreshold = settings?['near_budget_threshold'] as double;
+        } else if (settings?['near_budget_threshold'] is int) {
+          nearBudgetThreshold = (settings?['near_budget_threshold'] as int).toDouble();
+        } else {
+          // 값이 없으면 기본값 설정
+          nearBudgetThreshold = 80.0;
+        }
+      } else {
+        // Firestore에서 값이 없을 경우 기본값 설정
+        nearBudgetThreshold = 80.0;
+      }
+
+    } catch (e) {
+      print("Error fetching near budget threshold: $e");
+      // 예외가 발생하면 기본값을 설정
+      nearBudgetThreshold = 80.0;
+    }
+  }
+
+  // 예산 근접 알림 추가
+  Future<void> _checkNearBudgetAlert() async {
+
+    if (nearBudgetThreshold == null) {
+      nearBudgetThreshold = 80.0;  // 기본값 설정
+    }
+
+    await _fetchNearBudgetThreshold();  // Firestore에서 근접 기준을 가져옵니다.
+    print('임계값: $nearBudgetThreshold');
+    final prefs = await SharedPreferences.getInstance();
+    final a= prefs.getBool('lastNearBudgetAlert');
+
+    //final lastNearBudgetAlert = prefs.getBool('lastNearBudgetAlert') ?? false;  // null인 경우 기본값을 false로 설정
+    final lastNearBudgetAlert =false;
+    // 예산 근접 알림 조건 체크
+    if (totalExpense > totalBudget && totalBudget > 0) {
+      // 예산 초과 알림이 이미 발송된 상태면 근접 알림을 보내지 않도록 설정
+      prefs.setBool('lastNearBudgetAlert', false);
+    } else {
+      // 예산 초과 알림이 아닌 경우 근접 알림 조건 체크
+      if (totalExpense >= totalBudget * (nearBudgetThreshold / 100) && !lastNearBudgetAlert) {
+        // 알림을 보냄
+        _showNearBudgetNotification();
+        // 알림 후에 상태를 'lastNearBudgetAlert'로 설정
+        prefs.setBool('lastNearBudgetAlert', true);
+      } else if (totalExpense < totalBudget * (nearBudgetThreshold / 100) && lastNearBudgetAlert) {
+        // 예산 근접 알림 상태가 해제되었을 때 플래그 리셋
+        prefs.setBool('lastNearBudgetAlert', false);
+      }
+    }
+
+  }
+
+// 예산 근접 알림 발송
+  Future<void> _showNearBudgetNotification() async {
+    const AndroidNotificationDetails androidNotificationDetails = AndroidNotificationDetails(
+      'near_budget_channel',
+      'Budget Near Alert',
+      channelDescription: 'Notifies when the budget is nearing',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+
+    const NotificationDetails notificationDetails = NotificationDetails(android: androidNotificationDetails);
+
+    await _notificationsPlugin.show(
+      2, // 알림 ID
+      '예산 근접 알림',
+      '총 지출이 예산의 ${nearBudgetThreshold}% 초과했습니다!',
       notificationDetails,
     );
   }

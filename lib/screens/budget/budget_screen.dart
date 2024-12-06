@@ -14,6 +14,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   bool _isCalendarView = false;
+  Map<DateTime, Map<String, bool>> _markers = {}; // 날짜별로 수입, 지출 여부 저장
 
   int totalIncome = 0;
   int totalExpense = 0;
@@ -25,6 +26,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
     super.initState();
     _selectedDay = _focusedDay;
     _initializeUserId();
+    _fetchTransactionMarkers();
   }
 
   // Firebase에서 userId 가져오기
@@ -41,6 +43,37 @@ class _BudgetScreenState extends State<BudgetScreen> {
       });
       _calculateMonthlyTotals();
     }
+  }
+
+  // Firestore에서 수입/지출 내역을 가져와 날짜별 마커 데이터 설정
+  Future<void> _fetchTransactionMarkers() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print('No user logged in');
+      return;
+    }
+    final transactions = await _firestore
+        .collection('transactions')
+        .where('userId', isEqualTo: user.uid)
+        .get();
+    Map<DateTime, Map<String, bool>> markers = {};
+    for (var doc in transactions.docs) {
+      final data = doc.data();
+      print('Transaction Data: $data'); // 데이터 출력
+      final date = (data['date'] as Timestamp).toDate();
+      final day = DateTime.utc(date.year, date.month, date.day); // 날짜 표준화
+      markers.putIfAbsent(day, () => {'income': false, 'expense': false});
+      if (data['type'] == 'income') {
+        markers[day]!['income'] = true;
+      }
+      if (data['type'] == 'expense') {
+        markers[day]!['expense'] = true;
+      }
+    }
+    print('Markers after fetching: $markers'); // 최종 결과 출력
+    setState(() {
+      _markers = markers;
+    });
   }
 
   Stream<QuerySnapshot> _getTransactions(DateTime start, DateTime end) {
@@ -333,6 +366,14 @@ class _BudgetScreenState extends State<BudgetScreen> {
           firstDay: DateTime.utc(2000, 1, 1),
           lastDay: DateTime.utc(2100, 12, 31),
           focusedDay: _focusedDay,
+          headerStyle: HeaderStyle(
+            titleCentered: true,
+            formatButtonVisible: false,
+            titleTextStyle: const TextStyle(
+              fontSize: 20.0,
+            ),
+            headerPadding: const EdgeInsets.symmetric(vertical: 4.0),
+          ),
           selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
           calendarFormat: CalendarFormat.month,
           onDaySelected: (selectedDay, focusedDay) {
@@ -341,15 +382,43 @@ class _BudgetScreenState extends State<BudgetScreen> {
               _focusedDay = focusedDay;
             });
           },
+          calendarBuilders: CalendarBuilders(
+            markerBuilder: (context, date, events) {
+              final standardizedDate = DateTime.utc(date.year, date.month, date.day);
+              if (_markers.containsKey(standardizedDate)) {
+                final isIncome = _markers[standardizedDate]!['income'] ?? false;
+                final isExpense = _markers[standardizedDate]!['expense'] ?? false;
+                List<Widget> markers = [];
+                if (isIncome) {
+                  markers.add(
+                    Icon(Icons.circle, color: Colors.blue, size: 6), // 수입 마커
+                  );
+                }
+                if (isExpense) {
+                  markers.add(
+                    Icon(Icons.circle, color: Colors.red, size: 6), // 지출 마커
+                  );
+                }
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: markers,
+                );
+              }
+              return null; // 마커가 없는 경우
+            },
+          ),
           calendarStyle: CalendarStyle(
             selectedDecoration: BoxDecoration(
-              color: Colors.blue,
+              color: Colors.cyan,
               shape: BoxShape.circle,
             ),
             todayDecoration: BoxDecoration(
-              color: Colors.redAccent,
               shape: BoxShape.circle,
             ),
+              todayTextStyle: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red
+              )
           ),
         ),
         Expanded(
