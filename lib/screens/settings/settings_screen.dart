@@ -19,7 +19,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final String userId = FirebaseAuth.instance.currentUser!.uid;
 
-  bool _isNotificationEnabled = true; // 알림 활성화 여부
+  bool _isNotificationEnabled = false; // 알림 활성화 여부
   bool isNearBudgetAlertEnabled = false;
   bool isOverBudgetAlertEnabled = false;
   double nearBudgetThreshold = 80; // 기본적으로 80% 설정
@@ -38,7 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       setState(() {
-        _isNotificationEnabled = prefs.getBool('notificationsEnabled') ?? true;
+        _isNotificationEnabled = prefs.getBool('notificationsEnabled') ?? false;
       });
     } catch (e) {
       print('Failed to load notification preference: $e');
@@ -86,7 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final settings = docSnapshot.data();
         setState(() {
           isNearBudgetAlertEnabled = settings?['near_budget_alert'] ?? false;
-          isOverBudgetAlertEnabled = settings?['over_budget_alert'] ?? true;
+          isOverBudgetAlertEnabled = settings?['over_budget_alert'] ?? false;
           nearBudgetThreshold = (settings?['near_budget_threshold'] ?? 80).toDouble();
 
           // friends 필드가 배열인지 확인
@@ -109,7 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // 문서가 없는 경우 기본값으로 새 문서 생성
         await docRef.set({
           'near_budget_alert': false,
-          'over_budget_alert': true,
+          'over_budget_alert': false,
           'near_budget_threshold': 80.0,
           'friends': ['$userId#내 정보'], // friends 배열에 "1@1" 추가
         });
@@ -184,19 +184,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: themeProvider.themeMode == ThemeMode.dark,
               onChanged: (bool value) {
                 themeProvider.toggleTheme();
-              },
-            ),
-            Divider(), // 구분선 추가
-            Text(
-              "알림 설정",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 20),
-            SwitchListTile(
-              title: Text("알림 활성화"),
-              value: _isNotificationEnabled,
-              onChanged: (bool value) {
-                _saveNotificationPreference(value);
               },
             ),
             Divider(), // 구분선 추가
