@@ -57,10 +57,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (value) {
       // 알림 활성화 시 필요한 설정 추가 가능
       _showSnackbar('알림이 활성화되었습니다.');
+
+      setState(() {
+        isNearBudgetAlertEnabled = true; // 근접 알림 비활성화
+        isOverBudgetAlertEnabled = true; // 초과 알림 비활성화
+      });
+      await _saveSettings(); // 업데이트된 상태를 Firestore에 저장
+
       await requestNotificationPermission();
     } else {
-      // 알림 비활성화 시 모든 알림 취소
+      // 알림 비활성화 시 모든 알림 취소 및 개별 알림 비활성화
       await flutterLocalNotificationsPlugin.cancelAll();
+      setState(() {
+        isNearBudgetAlertEnabled = false; // 근접 알림 비활성화
+        isOverBudgetAlertEnabled = false; // 초과 알림 비활성화
+      });
+      await _saveSettings(); // 업데이트된 상태를 Firestore에 저장
       _showSnackbar('알림이 비활성화되었습니다.');
     }
   }
@@ -99,13 +111,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'near_budget_alert': false,
           'over_budget_alert': true,
           'near_budget_threshold': 80.0,
-          'friends': ["1@1"], // friends 배열에 "1@1" 추가
+          'friends': ['$userId#내 정보'], // friends 배열에 "1@1" 추가
         });
         setState(() {
           isNearBudgetAlertEnabled = false;
           isOverBudgetAlertEnabled = true;
           nearBudgetThreshold = 80.0;
-          friends = ["1@1"];
+          friends = ["'$userId#내 정보'"];
         });
       }
     } catch (e) {
