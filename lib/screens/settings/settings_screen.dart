@@ -19,10 +19,11 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final String userId = FirebaseAuth.instance.currentUser!.uid;
 
-  bool _isNotificationEnabled = true; // 알림 활성화 여부
+  bool _isNotificationEnabled = false; // 알림 활성화 여부
   bool isNearBudgetAlertEnabled = false;
   bool isOverBudgetAlertEnabled = false;
   double nearBudgetThreshold = 80; // 기본적으로 80% 설정
+  List<String> friends = []; // 친구 목록을 저장하는 배열
 
 
   @override
@@ -37,7 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       setState(() {
-        _isNotificationEnabled = prefs.getBool('notificationsEnabled') ?? true;
+        _isNotificationEnabled = prefs.getBool('notificationsEnabled') ?? false;
       });
     } catch (e) {
       print('Failed to load notification preference: $e');
@@ -56,29 +57,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (value) {
       // 알림 활성화 시 필요한 설정 추가 가능
       _showSnackbar('알림이 활성화되었습니다.');
+
+      setState(() {
+        isNearBudgetAlertEnabled = true; // 근접 알림 비활성화
+        isOverBudgetAlertEnabled = true; // 초과 알림 비활성화
+      });
+      await _saveSettings(); // 업데이트된 상태를 Firestore에 저장
+
       await requestNotificationPermission();
     } else {
-      // 알림 비활성화 시 모든 알림 취소
+      // 알림 비활성화 시 모든 알림 취소 및 개별 알림 비활성화
       await flutterLocalNotificationsPlugin.cancelAll();
+      setState(() {
+        isNearBudgetAlertEnabled = false; // 근접 알림 비활성화
+        isOverBudgetAlertEnabled = false; // 초과 알림 비활성화
+      });
+      await _saveSettings(); // 업데이트된 상태를 Firestore에 저장
       _showSnackbar('알림이 비활성화되었습니다.');
     }
   }
 
   Future<void> _loadSettings() async {
-    final docSnapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .get();
+    try {
+      final docRef = FirebaseFirestore.instance.collection('users').doc(userId);
+      final docSnapshot = await docRef.get();
 
-    if (docSnapshot.exists) {
-      final settings = docSnapshot.data();
-      setState(() {
-        isNearBudgetAlertEnabled = settings?['near_budget_alert'] ?? false;
-        isOverBudgetAlertEnabled = settings?['over_budget_alert'] ?? true;
-        nearBudgetThreshold = settings?['near_budget_threshold']?.toDouble() ?? 80.0;
-      });
+      if (docSnapshot.exists) {
+        final settings = docSnapshot.data();
+        setState(() {
+          isNearBudgetAlertEnabled = settings?['near_budget_alert'] ?? false;
+          isOverBudgetAlertEnabled = settings?['over_budget_alert'] ?? false;
+          nearBudgetThreshold = (settings?['near_budget_threshold'] ?? 80).toDouble();
+
+          // friends 필드가 배열인지 확인
+          if (settings?['friends'] is List) {
+            friends = List<String>.from(settings?['friends']);
+          } else {
+            friends = []; // friends 필드가 배열이 아니면 빈 배열로 초기화
+          }
+        });
+
+        // friends 필드가 없거나 빈 배열인 경우 초기값 추가
+        if (friends.isEmpty) {
+          final initialFriend = '$userId#내 정보';
+          friends = [initialFriend];
+          await docRef.set({
+            'friends': friends,
+          }, SetOptions(merge: true));
+        }
+      } else {
+        // 문서가 없는 경우 기본값으로 새 문서 생성
+        await docRef.set({
+          'near_budget_alert': false,
+          'over_budget_alert': false,
+          'near_budget_threshold': 80.0,
+          'friends': ['$userId#내 정보'], // friends 배열에 "1@1" 추가
+        });
+        setState(() {
+          isNearBudgetAlertEnabled = false;
+          isOverBudgetAlertEnabled = true;
+          nearBudgetThreshold = 80.0;
+          friends = ["'$userId#내 정보'"];
+        });
+      }
+    } catch (e) {
+      print('Failed to load settings: $e');
     }
   }
+
+
 
   Future<void> _saveSettings() async {
     await FirebaseFirestore.instance
@@ -137,19 +184,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: themeProvider.themeMode == ThemeMode.dark,
               onChanged: (bool value) {
                 themeProvider.toggleTheme();
-              },
-            ),
-            Divider(), // 구분선 추가
-            Text(
-              "알림 설정",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 20),
-            SwitchListTile(
-              title: Text("알림 활성화"),
-              value: _isNotificationEnabled,
-              onChanged: (bool value) {
-                _saveNotificationPreference(value);
               },
             ),
             Divider(), // 구분선 추가
